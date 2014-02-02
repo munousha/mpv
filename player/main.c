@@ -138,9 +138,6 @@ static MP_NORETURN void exit_player(struct MPContext *mpctx,
 
     mpctx->encode_lavc_ctx = NULL;
 
-#if HAVE_LUA
-    mp_lua_uninit(mpctx);
-#endif
     shutdown_clients(mpctx);
 
 #if defined(__MINGW32__)

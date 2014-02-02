@@ -747,8 +747,6 @@ static void handle_cursor_autohide(struct MPContext *mpctx)
 
 static void handle_input_and_seek_coalesce(struct MPContext *mpctx)
 {
-    mp_flush_events(mpctx);
-
     mp_cmd_t *cmd;
     while ((cmd = mp_input_get_cmd(mpctx->input, 0, 1)) != NULL) {
         mp_dispatch_queue_process(mpctx->dispatch, 0);
@@ -1339,7 +1337,6 @@ void idle_loop(struct MPContext *mpctx)
         if (cmd)
             run_command(mpctx, cmd);
         mp_cmd_free(cmd);
-        mp_flush_events(mpctx);
         mp_dispatch_queue_process(mpctx->dispatch, 0);
         getch2_poll();
     }

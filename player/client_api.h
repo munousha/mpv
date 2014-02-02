@@ -457,7 +457,7 @@ typedef struct mpv_event_script_input_dispatch {
      * down event), or "press" (either a single key event, or a key up event
      * following a "keyup_follows" event).
      */
-    char *type;
+    const char *type;
 } mpv_event_script_input_dispatch;
 
 typedef struct mpv_event_data {

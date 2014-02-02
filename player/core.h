@@ -143,9 +143,12 @@ typedef struct MPContext {
     struct mpv_global *global;
     struct MPOpts *opts;
     struct mp_log *log;
-    struct mp_log *statusline;
     struct m_config *mconfig;
     struct input_ctx *input;
+    struct mp_client_api *clients;
+    struct mp_dispatch_queue *dispatch;
+
+    struct mp_log *statusline;
     struct osd_state *osd;
     struct mp_osd_msg *osd_msg_stack;
     char *term_osd_text;

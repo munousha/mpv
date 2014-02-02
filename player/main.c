@@ -31,6 +31,7 @@
 #include "osdep/priority.h"
 #include "osdep/terminal.h"
 #include "osdep/timer.h"
+#include "osdep/threads.h"
 
 #include "common/av_log.h"
 #include "common/codecs.h"
@@ -61,6 +62,7 @@
 #include "video/out/vo.h"
 
 #include "core.h"
+#include "client.h"
 #include "lua.h"
 #include "command.h"
 #include "screenshot.h"
@@ -113,6 +115,16 @@ void mp_print_version(struct mp_log *log, int always)
     mp_msg(log, v, "\n");
 }
 
+static void shutdown_clients(struct MPContext *mpctx)
+{
+    while (mpctx->clients && mp_clients_num(mpctx)) {
+        mp_client_broadcast_event(mpctx, MPV_EVENT_SHUTDOWN, NULL);
+        mp_dispatch_queue_process(mpctx->dispatch, 0);
+        mp_input_get_cmd(mpctx->input, 100, 1);
+    }
+    mp_clients_destroy(mpctx);
+}
+
 static MP_NORETURN void exit_player(struct MPContext *mpctx,
                                     enum exit_reason how)
 {
@@ -129,6 +141,7 @@ static MP_NORETURN void exit_player(struct MPContext *mpctx,
 #if HAVE_LUA
     mp_lua_uninit(mpctx);
 #endif
+    shutdown_clients(mpctx);
 
 #if defined(__MINGW32__)
     timeEndPeriod(1);
@@ -314,6 +327,7 @@ static int mpv_main(int argc, char *argv[])
         .term_osd_contents = talloc_strdup(mpctx, ""),
         .osd_progbar = { .type = -1 },
         .playlist = talloc_struct(mpctx, struct playlist, {0}),
+        .dispatch = mp_dispatch_create(mpctx),
     };
 
     mpctx->global = talloc_zero(mpctx, struct mpv_global);
@@ -443,6 +457,8 @@ static int mpv_main(int argc, char *argv[])
         mpctx->mouse_cursor_visible = true;
         mpctx->initialized_flags |= INITIALIZED_VO;
     }
+
+    mp_clients_init(mpctx);
 
 #if HAVE_LUA
     // Lua user scripts can call arbitrary functions. Load them at a point

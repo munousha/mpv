@@ -157,13 +157,14 @@ package.loaded["mp.msg"] = mp.msg
 
 _G.mp_event_loop = function()
     local more_events = true
+    mp.suspend()
     while mp.keep_running do
-        local wait = nil
-        if not more_events then
-            wait = process_timers()
-        end
+        local wait = process_timers()
         if wait == nil then
             wait = 1e20 -- infinity for all practical purposes
+        end
+        if more_events then
+            wait = 0
         end
         -- Resume playloop - important especially if an error happened while
         -- suspended, and the error was handled, but no resume was done.
@@ -174,7 +175,6 @@ _G.mp_event_loop = function()
         -- Empty the event queue while suspended; otherwise, each
         -- event will keep us waiting until the core suspends again.
         mp.suspend()
-        process_timers()
         more_events = (e.event ~= "none")
         if more_events then
             local handler = event_handlers[e.event]

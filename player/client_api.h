@@ -8,17 +8,17 @@ extern "C" {
 #endif
 
 /**
- * The version is incremented on each change. The lower nibble (first 16 bit)
- * is incremented if not the C API itself is changed, but something in mpv
- * that might affect it (like the removal of an option or a property). The
- * higher nibble (bits 16-31) is incremented if the C API itself changes.
+ * The version is incremented on each change. The 16 bits are incremented if
+ * something in mpv is changed that might affect the client API, but doesn't
+ * change C API itself (like the removal of an option or a property). The lower
+ * 16 bits are incremented if the C API itself changes.
  */
-#define MPV_CLIENT_API_VERSION 0x00000000U
+#define MPV_CLIENT_API_VERSION 0x00000000UL
 
 /**
  * Return the MPV_CLIENT_API_VERSION the mpv source has been compiled with.
  */
-unsigned int mpv_client_api_version(void);
+unsigned long mpv_client_api_version(void);
 
 /**
  * Client context used by the client API. Every client has its own private

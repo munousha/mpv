@@ -673,7 +673,7 @@ int mpv_request_log_messages(mpv_handle *ctx, const char *min_level)
     return 0;
 }
 
-unsigned int mpv_client_api_version(void)
+unsigned long mpv_client_api_version(void)
 {
     return MPV_CLIENT_API_VERSION;
 }

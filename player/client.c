@@ -663,8 +663,8 @@ int mpv_request_log_messages(mpv_handle *ctx, const char *min_level)
         mp_msg_log_buffer_destroy(ctx->messages);
         ctx->messages = NULL;
         if (level >= 0) {
-            ctx->messages = mp_msg_log_buffer_new(ctx->mpctx->global, 1000,
-                                                  level);
+            ctx->messages =
+                mp_msg_log_buffer_new(ctx->mpctx->global, 1000, level);
         }
         ctx->messages_level = level;
     }

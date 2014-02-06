@@ -1307,7 +1307,8 @@ void run_playloop(struct MPContext *mpctx)
 
     execute_queued_seek(mpctx);
 
-    getch2_poll();
+    if (mpctx->opts->use_terminal)
+        getch2_poll();
 }
 
 // Waiting for the slave master to send us a new file to play.
@@ -1338,6 +1339,7 @@ void idle_loop(struct MPContext *mpctx)
             run_command(mpctx, cmd);
         mp_cmd_free(cmd);
         mp_dispatch_queue_process(mpctx->dispatch, 0);
-        getch2_poll();
+        if (mpctx->opts->use_terminal)
+            getch2_poll();
     }
 }

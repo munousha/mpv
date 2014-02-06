@@ -8,9 +8,9 @@ extern "C" {
 #endif
 
 /**
- * The version is incremented on each change. The 16 bits are incremented if
- * something in mpv is changed that might affect the client API, but doesn't
- * change C API itself (like the removal of an option or a property). The lower
+ * The version is incremented on each change. The 16 lower bits are incremented
+ * if something in mpv is changed that might affect the client API, but doesn't
+ * change C API itself (like the removal of an option or a property). The higher
  * 16 bits are incremented if the C API itself changes.
  */
 #define MPV_CLIENT_API_VERSION 0x00000000UL

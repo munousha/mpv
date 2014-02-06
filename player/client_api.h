@@ -87,6 +87,11 @@ typedef enum mpv_error {
      * disabled.
      */
     MPV_ERROR_PROPERTY_UNAVAILABLE = -6,
+    /**
+     * The mpv core wasn't configured and started yet. See the notes in
+     * mpv_create().
+     */
+    MPV_ERROR_UNINITIALIZED = -7,
 } mpv_error;
 
 /**
@@ -116,6 +121,49 @@ void mpv_free(void *data);
  *         mpv_destroy() is called.
  */
 const char *mpv_client_name(mpv_handle *ctx);
+
+/**
+ * Create a new mpv instance. This instance is in a pre-initialized state,
+ * and needs to be initialized to be actually used with most other API
+ * functions.
+ *
+ * Unlike the command line player, this will have initial settings suitable
+ * for embedding in applications. The following settings are different:
+ * - stdin/stdout/stderr and the terminal will never be accessed. This is
+ *   equivalent to setting the --no-terminal option.
+ *   (Technically, this also suppresses C signal handling.)
+ * - No config files will be loaded. This is equivalent to using --no-config.
+ * - Idle mode is enabled, which means the playback core will not exit if
+ *   there are no more files, but enter idle mode instead. This is equivalent
+ *   to the --idle option.
+ * - Disable input handling.
+ *
+ * All this assumes that API users do not want to use mpv user settings, and
+ * that they want to provide their own GUI. You can re-enable disabled features
+ * by setting the appropriate options.
+ *
+ * The point of separating handle creation and actual startup is that you can
+ * configure things which can't be changed during runtime.
+ *
+ * Most API functions will return MPV_ERROR_UNINITIALIZED in this state. You
+ * can call mpv_set_option() (and variants, e.g. mpv_set_option_string()) to
+ * set initial options. After this, call mpv_initialize() to start the player,
+ * and then use mpv_command() to start playback of a file.
+ *
+ * @return a new mpv client API handle
+ */
+mpv_handle *mpv_create(void);
+
+/**
+ * Start an unconfigured mpv instance and put it into the running state. If
+ * this function was already called successfully, this function fails.
+ *
+ * Upon successful return of this function, you can make full use of the client
+ * API.
+ *
+ * @return error code
+ */
+int mpv_initialize(mpv_handle *ctx);
 
 /**
  * Disconnect and destroy the client context. ctx will be deallocated with this

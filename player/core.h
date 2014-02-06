@@ -140,6 +140,7 @@ enum {
 #define NUM_PTRACKS 2
 
 typedef struct MPContext {
+    bool initialized;
     struct mpv_global *global;
     struct MPOpts *opts;
     struct mp_log *log;
@@ -387,6 +388,9 @@ void mp_set_playlist_entry(struct MPContext *mpctx, struct playlist_entry *e);
 void mp_play_files(struct MPContext *mpctx);
 
 // main.c
+int mp_initialize(struct MPContext *mpctx);
+struct MPContext *mp_create(void);
+void mp_destroy(struct MPContext *mpctx);
 void mp_print_version(struct mp_log *log, int always);
 
 // misc.c

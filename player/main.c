@@ -91,6 +91,8 @@
 #endif
 #endif
 
+static bool terminal_initialized;
+
 const char mp_help_text[] =
 "Usage:   mpv [options] [url|path/]filename\n"
 "\n"
@@ -125,11 +127,10 @@ static void shutdown_clients(struct MPContext *mpctx)
     mp_clients_destroy(mpctx);
 }
 
-static MP_NORETURN void exit_player(struct MPContext *mpctx,
-                                    enum exit_reason how)
+void mp_destroy(struct MPContext *mpctx)
 {
-    int rc;
-    uninit_player(mpctx, INITIALIZED_ALL);
+    if (mpctx->initialized)
+        uninit_player(mpctx, INITIALIZED_ALL);
 
 #if HAVE_ENCODING
     encode_lavc_finish(mpctx->encode_lavc_ctx);
@@ -144,10 +145,6 @@ static MP_NORETURN void exit_player(struct MPContext *mpctx,
     timeEndPeriod(1);
 #endif
 
-#if HAVE_COCOA
-    cocoa_set_input_context(NULL);
-#endif
-
     command_uninit(mpctx);
 
     mp_input_uninit(mpctx->input);
@@ -155,13 +152,26 @@ static MP_NORETURN void exit_player(struct MPContext *mpctx,
     osd_free(mpctx->osd);
 
 #if HAVE_LIBASS
-    ass_library_done(mpctx->ass_library);
-    mpctx->ass_library = NULL;
+    if (mpctx->ass_library)
+        ass_library_done(mpctx->ass_library);
 #endif
 
     if (mpctx->opts->use_terminal)
         getch2_disable();
     uninit_libav(mpctx->global);
+
+    mp_msg_uninit(mpctx->global);
+    talloc_free(mpctx);
+}
+
+static MP_NORETURN void exit_player(struct MPContext *mpctx,
+                                    enum exit_reason how)
+{
+    int rc;
+
+#if HAVE_COCOA
+    cocoa_set_input_context(NULL);
+#endif
 
     if (how != EXIT_NONE) {
         const char *reason;
@@ -197,11 +207,7 @@ static MP_NORETURN void exit_player(struct MPContext *mpctx,
         }
     }
 
-    // must be last since e.g. mp_msg uses option values
-    // that will be freed by this.
-
-    mp_msg_uninit(mpctx->global);
-    talloc_free(mpctx);
+    mp_destroy(mpctx);
 
 #if HAVE_COCOA
     terminate_cocoa_application();
@@ -298,8 +304,6 @@ static void osdep_preinit(int *p_argc, char ***p_argv)
     if (pSetSearchPathMode)
         pSetSearchPathMode(BASE_SEARCH_PATH_ENABLE_SAFE_SEARCHMODE);
 #endif
-
-    mp_time_init();
 }
 
 static int cfg_include(void *ctx, char *filename, int flags)
@@ -308,14 +312,10 @@ static int cfg_include(void *ctx, char *filename, int flags)
     return m_config_parse_config_file(mpctx->mconfig, filename, flags);
 }
 
-static int mpv_main(int argc, char *argv[])
+struct MPContext *mp_create(void)
 {
-    osdep_preinit(&argc, &argv);
-
-    if (argc >= 1) {
-        argc--;
-        argv++;
-    }
+    mp_time_init();
+    GetCpuCaps(&gCpuCaps);
 
     struct MPContext *mpctx = talloc(NULL, MPContext);
     *mpctx = (struct MPContext){
@@ -346,68 +346,35 @@ static int mpv_main(int argc, char *argv[])
     mpctx->mconfig->use_profiles = true;
     mpctx->mconfig->is_toplevel = true;
 
-    struct MPOpts *opts = mpctx->opts;
-    mpctx->global->opts = opts;
+    mpctx->global->opts = mpctx->opts;
 
-    char *verbose_env = getenv("MPV_VERBOSE");
-    if (verbose_env)
-        opts->verbose = atoi(verbose_env);
-
-    // Preparse the command line
-    m_config_preparse_command_line(mpctx->mconfig, mpctx->global, argc, argv);
-
-    mp_msg_update_msglevels(mpctx->global);
-
-    if (opts->use_terminal)
-        terminal_init();
-
-    init_libav(mpctx->global);
-    GetCpuCaps(&gCpuCaps);
     screenshot_init(mpctx);
     mpctx->mixer = mixer_init(mpctx, mpctx->global);
     command_init(mpctx);
+    init_libav(mpctx->global);
+    mp_clients_init(mpctx);
 
-    mp_print_version(mpctx->log, false);
+    return mpctx;
+}
 
-    if (!mp_parse_cfgfiles(mpctx))
-        exit_player(mpctx, EXIT_ERROR);
+// Finish mpctx initialization. This must be done after setting up all options.
+// Some of the initializations depend on the options, and can't be changed or
+// undone later.
+// cplayer: true if called by the command line player, false for client API
+// Returns: <0 on error, 0 on success.
+int mp_initialize(struct MPContext *mpctx)
+{
+    struct MPOpts *opts = mpctx->opts;
 
-    int r = m_config_parse_mp_command_line(mpctx->mconfig, mpctx->playlist,
-                                           mpctx->global, argc, argv);
-    if (r < 0) {
-        if (r <= M_OPT_EXIT) {
-            exit_player(mpctx, EXIT_NONE);
-        } else {
-            exit_player(mpctx, EXIT_ERROR);
-        }
+    assert(!mpctx->initialized);
+
+    if (mpctx->opts->use_terminal && !terminal_initialized) {
+        terminal_initialized = true;
+        terminal_init();
     }
-
-    mp_msg_update_msglevels(mpctx->global);
-
-    if (handle_help_options(mpctx))
-        exit_player(mpctx, EXIT_NONE);
-
-    MP_VERBOSE(mpctx, "Configuration: " CONFIGURATION "\n");
-    MP_VERBOSE(mpctx, "Command line:");
-    for (int i = 0; i < argc; i++)
-        MP_VERBOSE(mpctx, " '%s'", argv[i]);
-    MP_VERBOSE(mpctx, "\n");
-
-    if (!mpctx->playlist->first && !opts->player_idle_mode) {
-        mp_print_version(mpctx->log, true);
-        MP_INFO(mpctx, "%s", mp_help_text);
-        exit_player(mpctx, EXIT_NONE);
-    }
-
-#if HAVE_PRIORITY
-    set_priority();
-#endif
 
     mpctx->input = mp_input_init(mpctx->global);
     stream_set_interrupt_callback(mp_input_check_interrupt, mpctx->input);
-#if HAVE_COCOA
-    cocoa_set_input_context(mpctx->input);
-#endif
 
 #if HAVE_ENCODING
     if (opts->encode_output.file && *opts->encode_output.file) {
@@ -415,7 +382,7 @@ static int mpv_main(int argc, char *argv[])
                                                   mpctx->global);
         if(!mpctx->encode_lavc_ctx) {
             MP_INFO(mpctx, "Encoding initialization failed.");
-            exit_player(mpctx, EXIT_ERROR);
+            return -1;
         }
         m_config_set_option0(mpctx->mconfig, "vo", "lavc");
         m_config_set_option0(mpctx->mconfig, "ao", "lavc");
@@ -453,13 +420,11 @@ static int mpv_main(int argc, char *argv[])
         if (!mpctx->video_out) {
             MP_FATAL(mpctx, "Error opening/initializing "
                     "the selected video_out (-vo) device.\n");
-            exit_player(mpctx, EXIT_ERROR);
+            return -1;
         }
         mpctx->mouse_cursor_visible = true;
         mpctx->initialized_flags |= INITIALIZED_VO;
     }
-
-    mp_clients_init(mpctx);
 
 #if HAVE_LUA
     // Lua user scripts can call arbitrary functions. Load them at a point
@@ -476,6 +441,79 @@ static int mpv_main(int argc, char *argv[])
     mpctx->playlist->current = mp_check_playlist_resume(mpctx, mpctx->playlist);
     if (!mpctx->playlist->current)
         mpctx->playlist->current = mpctx->playlist->first;
+
+    mpctx->initialized = true;
+    return 0;
+}
+
+static int mpv_main(int argc, char *argv[])
+{
+    osdep_preinit(&argc, &argv);
+
+    if (argc >= 1) {
+        argc--;
+        argv++;
+    }
+
+    struct MPContext *mpctx = mp_create();
+    struct MPOpts *opts = mpctx->opts;
+
+    char *verbose_env = getenv("MPV_VERBOSE");
+    if (verbose_env)
+        opts->verbose = atoi(verbose_env);
+
+    // Preparse the command line
+    m_config_preparse_command_line(mpctx->mconfig, mpctx->global, argc, argv);
+
+    if (mpctx->opts->use_terminal && !terminal_initialized) {
+        terminal_initialized = true;
+        terminal_init();
+    }
+
+    mp_msg_update_msglevels(mpctx->global);
+
+    mp_print_version(mpctx->log, false);
+
+    if (!mp_parse_cfgfiles(mpctx))
+        exit_player(mpctx, EXIT_ERROR);
+
+    int r = m_config_parse_mp_command_line(mpctx->mconfig, mpctx->playlist,
+                                           mpctx->global, argc, argv);
+    if (r < 0) {
+        if (r <= M_OPT_EXIT) {
+            exit_player(mpctx, EXIT_NONE);
+        } else {
+            exit_player(mpctx, EXIT_ERROR);
+        }
+    }
+
+    mp_msg_update_msglevels(mpctx->global);
+
+    if (handle_help_options(mpctx))
+        exit_player(mpctx, EXIT_NONE);
+
+    MP_VERBOSE(mpctx, "Configuration: " CONFIGURATION "\n");
+    MP_VERBOSE(mpctx, "Command line:");
+    for (int i = 0; i < argc; i++)
+        MP_VERBOSE(mpctx, " '%s'", argv[i]);
+    MP_VERBOSE(mpctx, "\n");
+
+    if (!mpctx->playlist->first && !opts->player_idle_mode) {
+        mp_print_version(mpctx->log, true);
+        MP_INFO(mpctx, "%s", mp_help_text);
+        exit_player(mpctx, EXIT_NONE);
+    }
+
+#if HAVE_PRIORITY
+    set_priority();
+#endif
+
+    if (mp_initialize(mpctx) < 0)
+        exit_player(mpctx, EXIT_ERROR);
+
+#if HAVE_COCOA
+    cocoa_set_input_context(mpctx->input);
+#endif
 
     mp_play_files(mpctx);
 

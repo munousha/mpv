@@ -7,6 +7,8 @@
 #include "common/msg_control.h"
 #include "input/input.h"
 #include "misc/ring.h"
+#include "options/m_config.h"
+#include "options/m_option.h"
 #include "options/m_property.h"
 #include "osdep/threads.h"
 
@@ -177,11 +179,54 @@ void mpv_destroy(mpv_handle *ctx)
             ctx = NULL;
             // shutdown_clients() sleeps to avoid wasting CPU
             mp_input_wakeup(clients->mpctx->input);
+            // TODO: make core quit if there are no clients
             break;
         }
     }
     pthread_mutex_unlock(&clients->lock);
     assert(!ctx);
+}
+
+mpv_handle *mpv_create(void)
+{
+    struct MPContext *mpctx = mp_create();
+    mpv_handle *ctx = mp_new_client(mpctx->clients, "main");
+    if (ctx) {
+        // Set some defaults.
+        mpv_set_option_string(ctx, "idle", "yes");
+        mpv_set_option_string(ctx, "terminal", "no");
+        mpv_set_option_string(ctx, "osc", "no");
+    } else {
+        mp_destroy(mpctx);
+    }
+    return ctx;
+}
+
+static void *playback_thread(void *p)
+{
+    struct MPContext *mpctx = p;
+
+    pthread_detach(pthread_self());
+
+    mp_play_files(mpctx);
+
+    // This actually waits until all clients are gone before actually
+    // destroying mpctx.
+    mp_destroy(mpctx);
+
+    return NULL;
+}
+
+int mpv_initialize(mpv_handle *ctx)
+{
+    if (mp_initialize(ctx->mpctx) < 0)
+        return MPV_ERROR_INVALID_PARAMETER;
+
+    pthread_t thread;
+    if (pthread_create(&thread, NULL, playback_thread, ctx->mpctx) != 0)
+        return MPV_ERROR_NOMEM;
+
+    return 0;
 }
 
 // Reserve an entry in the ring buffer, as well as a reply ID. This can be
@@ -380,12 +425,28 @@ void mpv_wakeup(mpv_handle *ctx)
 int mpv_set_option(mpv_handle *ctx, const char *name, mpv_format format,
                    void *data)
 {
-    // Massively cheat. Once there's a way to create a mpv handle that does
-    // not refer to an already started core, this will make more sense, and
-    // will require a special case to set options directly.
-    char prop[100];
-    snprintf(prop, sizeof(prop), "options/%s", name);
-    return mpv_set_property(ctx, name, format, data);
+    if (ctx->mpctx->initialized) {
+        char prop[100];
+        snprintf(prop, sizeof(prop), "options/%s", name);
+        return mpv_set_property(ctx, name, format, data);
+    } else {
+        if (format != MPV_FORMAT_STRING)
+            return MPV_ERROR_INVALID_PARAMETER;
+        const char *value = data;
+        int err = m_config_set_option0(ctx->mpctx->mconfig, name, value);
+        switch (err) {
+        case M_OPT_MISSING_PARAM:
+        case M_OPT_INVALID:
+        case M_OPT_OUT_OF_RANGE:
+            return MPV_ERROR_INVALID_PARAMETER;
+        case M_OPT_UNKNOWN:
+            return MPV_ERROR_NOT_FOUND;
+        default:
+            if (err >= 0)
+                return 0;
+            return MPV_ERROR_INVALID_PARAMETER;
+        }
+    }
 }
 
 int mpv_set_option_string(mpv_handle *ctx, const char *name, const char *data)
@@ -444,6 +505,8 @@ static void cmd_fn(void *data)
 
 static int run_client_command(mpv_handle *ctx, struct mp_cmd *cmd)
 {
+    if (!ctx->mpctx->initialized)
+        return MPV_ERROR_UNINITIALIZED;
     if (!cmd)
         return MPV_ERROR_INVALID_PARAMETER;
 
@@ -469,6 +532,9 @@ int mpv_command_string(mpv_handle *ctx, const char *args)
 
 mpv_reply_id mpv_command_async(mpv_handle *ctx, const char **args)
 {
+    if (!ctx->mpctx->initialized)
+        return MPV_ERROR_UNINITIALIZED;
+
     struct mp_cmd *cmd = mp_input_parse_cmd_strv(ctx->log, 0, args, "<client>");
     if (!cmd)
         return MPV_ERROR_INVALID_PARAMETER;
@@ -517,6 +583,8 @@ static void setproperty_fn(void *arg)
 int mpv_set_property(mpv_handle *ctx, const char *name, mpv_format format,
                      void *data)
 {
+    if (!ctx->mpctx->initialized)
+        return MPV_ERROR_UNINITIALIZED;
     if (format != MPV_FORMAT_STRING)
         return MPV_ERROR_INVALID_PARAMETER;
 
@@ -536,6 +604,8 @@ int mpv_set_property_string(mpv_handle *ctx, const char *name, const char *data)
 mpv_reply_id mpv_set_property_async(mpv_handle *ctx, const char *name,
                                     mpv_format format, void *data)
 {
+    if (!ctx->mpctx->initialized)
+        return MPV_ERROR_UNINITIALIZED;
     if (format != MPV_FORMAT_STRING)
         return MPV_ERROR_INVALID_PARAMETER;
 
@@ -605,6 +675,9 @@ static void getproperty_fn(void *arg)
 int mpv_get_property(mpv_handle *ctx, const char *name, mpv_format format,
                      void *data)
 {
+    if (!ctx->mpctx->initialized)
+        return MPV_ERROR_UNINITIALIZED;
+
     struct getproperty_request req = {
         .mpctx = ctx->mpctx,
         .name = name,
@@ -632,6 +705,9 @@ char *mpv_get_property_osd_string(mpv_handle *ctx, const char *name)
 mpv_reply_id mpv_get_property_async(mpv_handle *ctx, const char *name,
                                     mpv_format format)
 {
+    if (!ctx->mpctx->initialized)
+        return MPV_ERROR_UNINITIALIZED;
+
     struct getproperty_request *req = talloc_ptrtype(NULL, req);
     *req = (struct getproperty_request){
         .mpctx = ctx->mpctx,
@@ -686,6 +762,7 @@ static const char *err_table[] = {
     [-MPV_ERROR_NOT_FOUND] = "not found",
     [-MPV_ERROR_PROPERTY] = "error accessing property",
     [-MPV_ERROR_PROPERTY_UNAVAILABLE] = "property unavailable",
+    [-MPV_ERROR_UNINITIALIZED] = "core not initialized",
 };
 
 const char *mpv_error_string(int error)

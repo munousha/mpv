@@ -47,6 +47,8 @@ struct mpv_handle {
     bool queued_wakeup;
     bool shutdown;
     bool choke_warning;
+    void (*wakeup_cb)(void *d);
+    void *wakeup_cb_ctx;
 
     struct mp_ring *events;     // stores mpv_event_data
     int max_events;             // allocated number of entries in events
@@ -145,6 +147,21 @@ const char *mpv_client_name(mpv_handle *ctx)
 struct mp_log *mp_client_get_log(struct mpv_handle *ctx)
 {
     return ctx->log;
+}
+
+static void wakeup_client(struct mpv_handle *ctx)
+{
+    pthread_cond_signal(&ctx->wakeup);
+    if (ctx->wakeup_cb)
+        ctx->wakeup_cb(ctx->wakeup_cb_ctx);
+}
+
+void mpv_set_wakeup_callback(mpv_handle *ctx, void (*cb)(void *d), void *d)
+{
+    pthread_mutex_lock(&ctx->lock);
+    ctx->wakeup_cb = cb;
+    ctx->wakeup_cb_ctx = d;
+    pthread_mutex_unlock(&ctx->lock);
 }
 
 void mpv_suspend(mpv_handle *ctx)
@@ -258,7 +275,7 @@ static int send_event(struct mpv_handle *ctx, struct mpv_event_data *event)
         r = mp_ring_write(ctx->events, (unsigned char *)event, sizeof(*event));
         if (r != sizeof(*event))
             abort();
-        pthread_cond_signal(&ctx->wakeup);
+        wakeup_client(ctx);
     }
     if (!r && !ctx->choke_warning) {
         mp_err(ctx->log, "Too many events queued.\n");
@@ -279,7 +296,7 @@ static void send_reply(struct mpv_handle *ctx, int64_t reply_id,
     int r = mp_ring_write(ctx->events, (unsigned char *)event, sizeof(*event));
     if (r != sizeof(*event))
         abort();
-    pthread_cond_signal(&ctx->wakeup);
+    wakeup_client(ctx);
     pthread_mutex_unlock(&ctx->lock);
 }
 
@@ -418,7 +435,7 @@ void mpv_wakeup(mpv_handle *ctx)
 {
     pthread_mutex_lock(&ctx->lock);
     ctx->queued_wakeup = true;
-    pthread_cond_signal(&ctx->wakeup);
+    wakeup_client(ctx);
     pthread_mutex_unlock(&ctx->lock);
 }
 

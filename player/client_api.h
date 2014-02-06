@@ -596,6 +596,25 @@ mpv_event_data *mpv_wait_event(mpv_handle *ctx, double timeout);
  */
 void mpv_wakeup(mpv_handle *ctx);
 
+/**
+ * Set a custom function that should be called when there are new events. Use
+ * this if blocking in mpv_wait_event() to wait for new events is not feasible.
+ * Keep in mind that the callback will be called from foreign threads. You
+ * must not make any assumptions of the environment, and you must return as
+ * soon as possible. You are not allowed to call any client API functions
+ * inside of the callback. In particular, you should not do any processing in
+ * the callback, but wake up another thread that does all the work.
+ *
+ * In general, the client API expects you to call mpv_wait_event() to receive
+ * notifications, and the wakeup callback is merely a helper utility to make
+ * this easier in certain situations.
+ *
+ * If you actually want to do processing in a callback, spawn a thread that
+ * does nothing but call mpv_wait_event() in a loop and dispatches the result
+ * to a callback.
+ */
+void mpv_set_wakeup_callback(mpv_handle *ctx, void (*cb)(void *d), void *d);
+
 #ifdef __cplusplus
 }
 #endif

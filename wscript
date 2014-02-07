@@ -10,6 +10,11 @@ from waftools.checks.custom import *
 
 build_options = [
     {
+        'name': '--shared',
+        'desc': 'enable shared library',
+        'default': 'disable',
+        'func': check_true
+    }, {
         'name': '--static-build',
         'desc': 'static build',
         'default': 'disable',

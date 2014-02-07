@@ -426,7 +426,7 @@ def build(ctx):
 
     ctx(
         target       = "mpv",
-        source       = ctx.filtered_sources(sources),
+        source       = ctx.filtered_sources(sources) + ["player/main_fn.c"],
         use          = ctx.dependencies_use(),
         includes     = [ctx.bldnode.abspath(), ctx.srcnode.abspath()] + \
                        ctx.dependencies_includes(),
@@ -434,6 +434,17 @@ def build(ctx):
         install_path = ctx.env.BINDIR,
         **cprog_kwargs
     )
+
+    if ctx.dependency_satisfied('shared'):
+        ctx(
+            target       = "libmpv",
+            source       = ctx.filtered_sources(sources),
+            use          = ctx.dependencies_use(),
+            includes     = [ctx.bldnode.abspath(), ctx.srcnode.abspath()] + \
+                            ctx.dependencies_includes(),
+            features     = "c cshlib",
+            install_path = ctx.env.LIBDIR,
+        )
 
     if ctx.env.DEST_OS == 'win32':
         wrapctx = ctx(

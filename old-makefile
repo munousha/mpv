@@ -396,8 +396,11 @@ all: $(ALL_TARGETS)
 %-rc.o: %.rc
 	$(WINDRES) -I. $< $@
 
-mpv$(EXESUF): $(OBJECTS)
+mpv$(EXESUF): $(OBJECTS) player/main_fn.o
 mpv$(EXESUF):
+	$(CC) -o $@ $^ $(EXTRALIBS)
+
+client_example$(EXESUF): $(OBJECTS) client_example.o
 	$(CC) -o $@ $^ $(EXTRALIBS)
 
 input/input.c: input/input_conf.h

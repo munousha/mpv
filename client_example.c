@@ -1,7 +1,16 @@
 #include <stddef.h>
 #include <stdio.h>
+#include <stdlib.h>
 
 #include "player/client_api.h"
+
+static void check_error(int status)
+{
+    if (status < 0) {
+        printf("mpv API error: %s\n", mpv_error_string(status));
+        exit(1);
+    }
+}
 
 int main(int argc, char *argv[])
 {
@@ -11,19 +20,20 @@ int main(int argc, char *argv[])
         return 1;
     }
 
-    if (mpv_initialize(ctx) < 0) {
-        printf("failed initializing\n");
-        return 1;
-    }
+    check_error(mpv_initialize(ctx));
 
     // Load a random file.
-    mpv_command_string(ctx, "loadfile test.mkv");
+    check_error(mpv_command_string(ctx, "loadfile test.mkv"));
 
     // Create another player, because why the hell not? (no error checking)
     mpv_handle *ctx2 = mpv_create();
-    mpv_set_option_string(ctx2, "title", "number 2");
-    mpv_initialize(ctx2);
-    mpv_command_string(ctx2, "loadfile test.mkv");
+    if (!ctx2) {
+        printf("failed creating context (2)\n");
+        return 1;
+    }
+    check_error(mpv_set_option_string(ctx2, "title", "number 2"));
+    check_error(mpv_initialize(ctx2));
+    check_error(mpv_command_string(ctx2, "loadfile test.mkv"));
 
     // Let it play, and wait until the user quits.
     while (1) {

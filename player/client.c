@@ -35,7 +35,7 @@ struct mpv_handle {
     struct mp_client_api *clients;
 
     // -- not thread-safe
-    struct mpv_event_data *cur_event;
+    struct mpv_event *cur_event;
 
     pthread_mutex_t lock;
     pthread_cond_t wakeup;
@@ -50,7 +50,7 @@ struct mpv_handle {
     void (*wakeup_cb)(void *d);
     void *wakeup_cb_ctx;
 
-    struct mp_ring *events;     // stores mpv_event_data
+    struct mp_ring *events;     // stores mpv_event
     int max_events;             // allocated number of entries in events
     int reserved_events;        // number of entries reserved for replies
 
@@ -124,8 +124,8 @@ struct mpv_handle *mp_new_client(struct mp_client_api *clients, const char *name
         .log = mp_log_new(client, clients->mpctx->log, unique_name),
         .mpctx = clients->mpctx,
         .clients = clients,
-        .cur_event = talloc_zero(client, struct mpv_event_data),
-        .events = mp_ring_new(client, num_events * sizeof(struct mpv_event_data)),
+        .cur_event = talloc_zero(client, struct mpv_event),
+        .events = mp_ring_new(client, num_events * sizeof(struct mpv_event)),
         .max_events = num_events,
         .event_mask = ((uint64_t)-1) & ~(1ULL << MPV_EVENT_TICK),
     };
@@ -183,7 +183,7 @@ void mpv_destroy(mpv_handle *ctx)
         if (clients->clients[n] == ctx) {
             MP_TARRAY_REMOVE_AT(clients->clients, clients->num_clients, n);
             while (mp_ring_buffered(ctx->events)) {
-                struct mpv_event_data event;
+                struct mpv_event event;
                 int r = mp_ring_read(ctx->events, (unsigned char *)&event,
                                      sizeof(event));
                 assert(r == sizeof(event));
@@ -262,7 +262,7 @@ static int64_t reserve_reply(struct mpv_handle *ctx)
     return res;
 }
 
-static int send_event(struct mpv_handle *ctx, struct mpv_event_data *event)
+static int send_event(struct mpv_handle *ctx, struct mpv_event *event)
 {
     pthread_mutex_lock(&ctx->lock);
     if (!(ctx->event_mask & (1ULL << event->event_id))) {
@@ -288,7 +288,7 @@ static int send_event(struct mpv_handle *ctx, struct mpv_event_data *event)
 // Send a reply; the reply must have been previously reserved with
 // reserve_reply (otherwise, use send_event()).
 static void send_reply(struct mpv_handle *ctx, int64_t reply_id,
-                       struct mpv_event_data *event)
+                       struct mpv_event *event)
 {
     pthread_mutex_lock(&ctx->lock);
     assert(ctx->reserved_events > 0);
@@ -302,7 +302,7 @@ static void send_reply(struct mpv_handle *ctx, int64_t reply_id,
 
 static void send_error_reply(struct mpv_handle *ctx, int64_t reply_id, int err)
 {
-    struct mpv_event_data event = {
+    struct mpv_event event = {
         .event_id = MPV_EVENT_ERROR,
         .error = err,
     };
@@ -314,7 +314,7 @@ void mp_client_status_reply(struct mpv_handle *ctx, int64_t reply_id, int status
     if (status < 0) {
         send_error_reply(ctx, reply_id, status);
     } else {
-        struct mpv_event_data reply = {
+        struct mpv_event reply = {
             .event_id = MPV_EVENT_OK,
         };
         send_reply(ctx, reply_id, &reply);
@@ -325,7 +325,7 @@ void mp_client_broadcast_event(struct MPContext *mpctx, int event, void *data)
 {
     struct mp_client_api *clients = mpctx->clients;
 
-    struct mpv_event_data event_data = {
+    struct mpv_event event_data = {
         .event_id = event,
         .data = data,
     };
@@ -346,7 +346,7 @@ int mp_client_send_event(struct MPContext *mpctx, const char *client_name,
     struct mp_client_api *clients = mpctx->clients;
     int r = 0;
 
-    struct mpv_event_data event_data = {
+    struct mpv_event event_data = {
         .event_id = event,
         .data = data,
     };
@@ -366,7 +366,7 @@ int mp_client_send_event(struct MPContext *mpctx, const char *client_name,
     return r;
 }
 
-int mpv_request_event(mpv_handle *ctx, mpv_event event, int enable)
+int mpv_request_event(mpv_handle *ctx, mpv_event_id event, int enable)
 {
     if (!mpv_event_name(event) || enable < 0 || enable > 1)
         return MPV_ERROR_INVALID_PARAMETER;
@@ -377,15 +377,15 @@ int mpv_request_event(mpv_handle *ctx, mpv_event event, int enable)
     return 0;
 }
 
-mpv_event_data *mpv_wait_event(mpv_handle *ctx, double timeout)
+mpv_event *mpv_wait_event(mpv_handle *ctx, double timeout)
 {
-    mpv_event_data *event = ctx->cur_event;
+    mpv_event *event = ctx->cur_event;
 
     struct timespec deadline = mpthread_get_deadline(timeout);
 
     pthread_mutex_lock(&ctx->lock);
 
-    *event = (mpv_event_data){0};
+    *event = (mpv_event){0};
     talloc_free_children(event);
 
     while (1) {
@@ -680,7 +680,7 @@ static void getproperty_fn(void *arg)
                 .format = req->format,
                 .data = talloc_steal(prop, xdata),
             };
-            struct mpv_event_data reply = {
+            struct mpv_event reply = {
                 .event_id = MPV_EVENT_PROPERTY,
                 .data = prop,
             };
@@ -812,7 +812,7 @@ static const char *event_table[] = {
     [MPV_EVENT_SCRIPT_INPUT_DISPATCH] = "script-input-dispatch",
 };
 
-const char *mpv_event_name(mpv_event event)
+const char *mpv_event_name(mpv_event_id event)
 {
     if (event < 0 || event >= MP_ARRAY_SIZE(event_table))
         return NULL;

@@ -376,7 +376,7 @@ static int script_wait_event(lua_State *L)
     if (ctx->suspended && timeout > 0)
         luaL_error(L, "attempting to wait while core is suspended");
 
-    mpv_event_data *event = mpv_wait_event(ctx->client, timeout);
+    mpv_event *event = mpv_wait_event(ctx->client, timeout);
 
     lua_newtable(L); // event
     lua_pushstring(L, mpv_event_name(event->event_id)); // event name

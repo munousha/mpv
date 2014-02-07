@@ -358,7 +358,7 @@ char *mpv_get_property_osd_string(mpv_handle *ctx, const char *name);
 mpv_reply_id mpv_get_property_async(mpv_handle *ctx, const char *name,
                                     mpv_format format);
 
-typedef enum mpv_event {
+typedef enum mpv_event_id {
     /**
      * Nothing happened. Happens on timeouts or sporadic wakeups.
      */
@@ -441,7 +441,7 @@ typedef enum mpv_event {
      * to a client.
      */
     MPV_EVENT_SCRIPT_INPUT_DISPATCH = 15,
-} mpv_event;
+} mpv_event_id;
 
 /**
  * Return a string describing the event. For unknown events, NULL is returned.
@@ -449,7 +449,7 @@ typedef enum mpv_event {
  * Note that all events actually returned by the API will also yield a non-NULL
  * string with this function.
  *
- * @param event event ID, see see enum mpv_event
+ * @param event event ID, see see enum mpv_event_id
  * @return A static string giving a short symbolic name of the event. It
  *         consists of lower-case ASCII characters and can include "-"
  *         characters. This string is suitable for use in e.g. scripting
@@ -457,7 +457,7 @@ typedef enum mpv_event {
  *         The string is completely static, i.e. doesn't need to be deallocated,
  *         and is valid forever.
  */
-const char *mpv_event_name(mpv_event event);
+const char *mpv_event_name(mpv_event_id event);
 
 typedef struct mpv_event_property {
     /**
@@ -508,7 +508,7 @@ typedef struct mpv_event_script_input_dispatch {
     const char *type;
 } mpv_event_script_input_dispatch;
 
-typedef struct mpv_event_data {
+typedef struct mpv_event {
     /**
      * If the event is in reply to a request (made with this API and this
      * API handle), this is set to the reply ID used by the request.
@@ -519,7 +519,7 @@ typedef struct mpv_event_data {
      * One of mpv_event. Keep in mind that later ABI compatible releases might
      * add new event types. These should be ignored by the API user.
      */
-    mpv_event event_id;
+    mpv_event_id event_id;
     /**
      * This is used for MPV_EVENT_ERROR only, and contains the error code.
      * It is set to 0 for all other events.
@@ -533,7 +533,7 @@ typedef struct mpv_event_data {
      *  other: NULL, or ignore the value if it's not NULL
      */
     void *data;
-} mpv_event_data;
+} mpv_event;
 
 /**
  * Enable or disable the given event.
@@ -543,11 +543,11 @@ typedef struct mpv_event_data {
  * (Informational note: currently, all events are enabled by default, except
  *  MPV_EVENT_TICK.)
  *
- * @param event See enum mpv_event.
+ * @param event See enum mpv_event_id.
  * @param enable 1 to enable receiving this event, 0 to disable it.
  * @return error code
  */
-int mpv_request_event(mpv_handle *ctx, mpv_event event, int enable);
+int mpv_request_event(mpv_handle *ctx, mpv_event_id event, int enable);
 
 /**
  * Enable or disable receiving of log messages. These are the messages the
@@ -581,7 +581,7 @@ int mpv_request_log_messages(mpv_handle *ctx, const char *min_level);
  *         itself encounters an error, the event is set to MPV_EVENT_ERROR
  *         with in_reply_to set to 0.
  */
-mpv_event_data *mpv_wait_event(mpv_handle *ctx, double timeout);
+mpv_event *mpv_wait_event(mpv_handle *ctx, double timeout);
 
 /**
  * Interrupt the current mpv_wait_event() call. This will wake up the thread

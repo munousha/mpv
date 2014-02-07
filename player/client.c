@@ -127,7 +127,7 @@ struct mpv_handle *mp_new_client(struct mp_client_api *clients, const char *name
         .cur_event = talloc_zero(client, struct mpv_event_data),
         .events = mp_ring_new(client, num_events * sizeof(struct mpv_event_data)),
         .max_events = num_events,
-        .event_mask = ((uint64_t)-1) & ~MPV_EVENT_TICK,
+        .event_mask = ((uint64_t)-1) & ~(1ULL << MPV_EVENT_TICK),
     };
     pthread_mutex_init(&client->lock, NULL);
     pthread_cond_init(&client->wakeup, NULL);

@@ -1,3 +1,26 @@
+/* Permission to use, copy, modify, and/or distribute this software for any
+ * purpose with or without fee is hereby granted, provided that the above
+ * copyright notice and this permission notice appear in all copies.
+ *
+ * THE SOFTWARE IS PROVIDED "AS IS" AND THE AUTHOR DISCLAIMS ALL WARRANTIES
+ * WITH REGARD TO THIS SOFTWARE INCLUDING ALL IMPLIED WARRANTIES OF
+ * MERCHANTABILITY AND FITNESS. IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR
+ * ANY SPECIAL, DIRECT, INDIRECT, OR CONSEQUENTIAL DAMAGES OR ANY DAMAGES
+ * WHATSOEVER RESULTING FROM LOSS OF USE, DATA OR PROFITS, WHETHER IN AN
+ * ACTION OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING OUT OF
+ * OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
+ */
+
+/*
+ * Note: the client API is licensed under ISC (see above) to ease
+ * interoperability with other licenses. But keep in mind that the
+ * mpv core is still mostly GPLv2+. It's up to lawyers to decide
+ * whether applications using this API are affected by the GPL.
+ * One argument against this is that proprietary applications
+ * using mplayer in slave mode is apparently tolerated, and this
+ * API is basically equivalent to slave mode.
+ */
+
 #ifndef MPV_CLIENT_API_H_
 #define MPV_CLIENT_API_H_
 

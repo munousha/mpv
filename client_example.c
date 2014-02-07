@@ -43,6 +43,9 @@ int main(int argc, char *argv[])
             break;
     }
 
+    check_error(mpv_command_string(ctx, "quit"));
+    check_error(mpv_command_string(ctx2, "quit"));
+
     mpv_destroy(ctx);
     mpv_destroy(ctx2);
     return 0;

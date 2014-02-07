@@ -27,23 +27,25 @@ unsigned long mpv_client_api_version(void);
 typedef struct mpv_handle mpv_handle;
 
 /**
+ * Asynchronous calls.
+ *
  * The client API includes asynchronous functions. These allow you to send
- * requests instantly, and get replies as events at a later point.
- * Reply IDs are used to associate requests with replies. As such, they are
- * returned by functions which send requests.
+ * requests instantly, and get replies as events at a later point. The
+ * requests are made with functions carrying the _async suffix, and replies
+ * are returned by mpv_wait_event() (interleaved with the normal event stream).
  *
- * Normal reply IDs are always > 0 and strictly monotonously increasing.
+ * A 64 bit userdata value is used to allow the user to associate requests
+ * with replies. The value is passed as reply_userdata parameter to the request
+ * function. The reply to the request will have the reply mpv_event->in_reply_to
+ * field set to the same value as the reply_userdata parameter of the
+ * corresponding request.
  *
- * A value of 0 is used in events which are not directly in reply to a request.
- *
- * A negative value is used on error situations. In this case the value is
- * not a reply ID, but an error code. This can happen for example when sending
- * a request and the request queue is full, or if sending a request requires
- * memory allocation and allocation failed.
- *
- * This type is always int64_t. The typedef is only for documentation.
+ * This userdata value is arbitrary and is never interpreted by the API. The
+ * only exception and restriction on the value is that it must not be 0. This
+ * is enforced by the API, because mpv_event->in_reply_to set to 0 means that
+ * the event is not a reply. (If the user were allowed to use 0 for userdata,
+ * the user couldn't distinguish normal events and replies on some cases.)
  */
-typedef int64_t mpv_reply_id;
 
 /**
  * List of error codes than can be returned by API functions. 0 and positive
@@ -279,13 +281,11 @@ int mpv_command_string(mpv_handle *ctx, const char *args);
  *          earlier commands.
  *          TODO: explain exact semantics, also check with seek commands.
  *
- * @return Reply ID for the confirmation event. On out of memory situations,
- *         or if the player isn't running, return a negative error code. Note
- *         that the command as well as the parameters are checked in the
- *         player thread, after sending the request. These errors will be
- *         returned as error events.
+ * @param reply_userdata see common description of asynchronous calls
+ * @return error code
  */
-mpv_reply_id mpv_command_async(mpv_handle *ctx, const char **args);
+int mpv_command_async(mpv_handle *ctx, uint64_t reply_userdata,
+                      const char **args);
 
 /**
  * Set a property to a given value.
@@ -309,13 +309,14 @@ int mpv_set_property_string(mpv_handle *ctx, const char *name, const char *data)
  * Set a property asynchronously. You will receive the result of the operation
  * as MPV_EVENT_OK or MPV_EVENT_ERROR event.
  *
+ * @param reply_userdata see \ref asynchronous calls
  * @param name The property name.
  * @param format see enum mpv_format. Only MPV_FORMAT_STRING is valid.
  * @param[in] data Option value. The value will be copied.
  * @return Reply ID for the confirmation event, or negative error code.
  */
-mpv_reply_id mpv_set_property_async(mpv_handle *ctx, const char *name,
-                                    mpv_format format, void *data);
+int mpv_set_property_async(mpv_handle *ctx, uint64_t reply_userdata,
+                           const char *name, mpv_format format, void *data);
 
 /**
  * Read the value of the given property.
@@ -351,12 +352,13 @@ char *mpv_get_property_osd_string(mpv_handle *ctx, const char *name);
  * as well as the property data with the MPV_EVENT_PROPERTY or
  * MPV_EVENT_ERROR event.
  *
+ * @param reply_userdata see \ref asynchronous calls
  * @param name The property name.
  * @param format see enum mpv_format.
  * @return Reply ID, or negative error code if sending the request failed.
  */
-mpv_reply_id mpv_get_property_async(mpv_handle *ctx, const char *name,
-                                    mpv_format format);
+int mpv_get_property_async(mpv_handle *ctx, uint64_t reply_userdata,
+                           const char *name, mpv_format format);
 
 typedef enum mpv_event_id {
     /**
@@ -511,10 +513,11 @@ typedef struct mpv_event_script_input_dispatch {
 typedef struct mpv_event {
     /**
      * If the event is in reply to a request (made with this API and this
-     * API handle), this is set to the reply ID used by the request.
+     * API handle), this is set to the reply userdata set by the request
+     * call.
      * Otherwise, this field is 0.
      */
-    mpv_reply_id in_reply_to;
+    uint64_t in_reply_to;
     /**
      * One of mpv_event. Keep in mind that later ABI compatible releases might
      * add new event types. These should be ignored by the API user.

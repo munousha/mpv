@@ -42,7 +42,6 @@ struct mpv_handle {
 
     // -- protected by lock
 
-    uint64_t alloc_reply_id;
     uint64_t event_mask;
     bool queued_wakeup;
     bool shutdown;
@@ -246,17 +245,17 @@ int mpv_initialize(mpv_handle *ctx)
     return 0;
 }
 
-// Reserve an entry in the ring buffer, as well as a reply ID. This can be
-// used to guarantee that the reply can be made, even if the buffer becomes
-// congested _after_ sending the request.
+// Reserve an entry in the ring buffer. This can be used to guarantee that the
+// reply can be made, even if the buffer becomes congested _after_ sending
+// the request.
 // Returns an error code if the buffer is full.
-static int64_t reserve_reply(struct mpv_handle *ctx)
+static int reserve_reply(struct mpv_handle *ctx)
 {
-    int64_t res = MPV_ERROR_EVENT_BUFFER_FULL;
+    int res = MPV_ERROR_EVENT_BUFFER_FULL;
     pthread_mutex_lock(&ctx->lock);
     if (ctx->reserved_events < ctx->max_events) {
         ctx->reserved_events++;
-        res = ++ctx->alloc_reply_id;
+        res = 0;
     }
     pthread_mutex_unlock(&ctx->lock);
     return res;
@@ -287,9 +286,10 @@ static int send_event(struct mpv_handle *ctx, struct mpv_event *event)
 
 // Send a reply; the reply must have been previously reserved with
 // reserve_reply (otherwise, use send_event()).
-static void send_reply(struct mpv_handle *ctx, int64_t reply_id,
+static void send_reply(struct mpv_handle *ctx, uint64_t reply_id,
                        struct mpv_event *event)
 {
+    event->in_reply_to = reply_id;
     pthread_mutex_lock(&ctx->lock);
     assert(ctx->reserved_events > 0);
     ctx->reserved_events--;
@@ -300,7 +300,7 @@ static void send_reply(struct mpv_handle *ctx, int64_t reply_id,
     pthread_mutex_unlock(&ctx->lock);
 }
 
-static void send_error_reply(struct mpv_handle *ctx, int64_t reply_id, int err)
+static void send_error_reply(struct mpv_handle *ctx, uint64_t reply_id, int err)
 {
     struct mpv_event event = {
         .event_id = MPV_EVENT_ERROR,
@@ -309,7 +309,8 @@ static void send_error_reply(struct mpv_handle *ctx, int64_t reply_id, int err)
     send_reply(ctx, reply_id, &event);
 }
 
-void mp_client_status_reply(struct mpv_handle *ctx, int64_t reply_id, int status)
+static void mp_client_status_reply(struct mpv_handle *ctx, uint64_t reply_id,
+                                   int status)
 {
     if (status < 0) {
         send_error_reply(ctx, reply_id, status);
@@ -483,23 +484,18 @@ static void run_locked(mpv_handle *ctx, void (*fn)(void *fn_data), void *fn_data
 // Run a command asynchronously. It's the responsibility of the caller to
 // actually send the reply. This helper merely saves a small part of the
 // required boilerplate to do so.
-//  req_reply_id: where to store the reply_id. This should point into the struct
-//                the fn_data points to, so that the fn callback can use it to
-//                send a reply with e.g. send_reply().
 //  fn: callback to execute the request
 //  fn_data: opaque caller-defined argument for fn. This will be automatically
 //           freed with talloc_free(fn_data).
-static int64_t run_async(mpv_handle *ctx, int64_t *req_reply_id,
-                         void (*fn)(void *fn_data), void *fn_data)
+static int run_async(mpv_handle *ctx, void (*fn)(void *fn_data), void *fn_data)
 {
-    int64_t reply_id = reserve_reply(ctx);
-    if (reply_id < 0) {
+    int err = reserve_reply(ctx);
+    if (err < 0) {
         talloc_free(fn_data);
-        return reply_id;
+        return err;
     }
-    *req_reply_id = reply_id;
     mp_dispatch_enqueue_autofree(ctx->mpctx->dispatch, fn, fn_data);
-    return reply_id;
+    return 0;
 }
 
 struct cmd_request {
@@ -507,7 +503,7 @@ struct cmd_request {
     struct mp_cmd *cmd;
     int status;
     struct mpv_handle *reply_ctx;
-    int64_t reply_id;
+    uint64_t reply_id;
 };
 
 static void cmd_fn(void *data)
@@ -547,7 +543,7 @@ int mpv_command_string(mpv_handle *ctx, const char *args)
         mp_input_parse_cmd(ctx->mpctx->input, bstr0((char*)args), ctx->name));
 }
 
-mpv_reply_id mpv_command_async(mpv_handle *ctx, const char **args)
+int mpv_command_async(mpv_handle *ctx, uint64_t ud, const char **args)
 {
     if (!ctx->mpctx->initialized)
         return MPV_ERROR_UNINITIALIZED;
@@ -561,8 +557,9 @@ mpv_reply_id mpv_command_async(mpv_handle *ctx, const char **args)
         .mpctx = ctx->mpctx,
         .cmd = cmd,
         .reply_ctx = ctx,
+        .reply_id = ud,
     };
-    return run_async(ctx, &req->reply_id, cmd_fn, req);
+    return run_async(ctx, cmd_fn, req);
 }
 
 static int translate_property_error(int errc)
@@ -585,7 +582,7 @@ struct setproperty_request {
     void *data;
     int status;
     struct mpv_handle *reply_ctx;
-    int64_t reply_id;
+    uint64_t reply_id;
 };
 
 static void setproperty_fn(void *arg)
@@ -618,8 +615,8 @@ int mpv_set_property_string(mpv_handle *ctx, const char *name, const char *data)
     return mpv_set_property(ctx, name, MPV_FORMAT_STRING, (void *)data);
 }
 
-mpv_reply_id mpv_set_property_async(mpv_handle *ctx, const char *name,
-                                    mpv_format format, void *data)
+int mpv_set_property_async(mpv_handle *ctx, uint64_t ud, const char *name,
+                           mpv_format format, void *data)
 {
     if (!ctx->mpctx->initialized)
         return MPV_ERROR_UNINITIALIZED;
@@ -632,8 +629,9 @@ mpv_reply_id mpv_set_property_async(mpv_handle *ctx, const char *name,
         .name = talloc_strdup(req, name),
         .data = talloc_strdup(req, data), // for now always a string
         .reply_ctx = ctx,
+        .reply_id = ud,
     };
-    return run_async(ctx, &req->reply_id, setproperty_fn, req);
+    return run_async(ctx, setproperty_fn, req);
 }
 
 static int property_format_to_cmd(int format)
@@ -652,7 +650,7 @@ struct getproperty_request {
     void *data;
     int status;
     struct mpv_handle *reply_ctx;
-    int64_t reply_id;
+    uint64_t reply_id;
 };
 
 static void getproperty_fn(void *arg)
@@ -719,8 +717,8 @@ char *mpv_get_property_osd_string(mpv_handle *ctx, const char *name)
     return str;
 }
 
-mpv_reply_id mpv_get_property_async(mpv_handle *ctx, const char *name,
-                                    mpv_format format)
+int mpv_get_property_async(mpv_handle *ctx, uint64_t ud, const char *name,
+                           mpv_format format)
 {
     if (!ctx->mpctx->initialized)
         return MPV_ERROR_UNINITIALIZED;
@@ -731,8 +729,9 @@ mpv_reply_id mpv_get_property_async(mpv_handle *ctx, const char *name,
         .name = talloc_strdup(req, name),
         .format = format,
         .reply_ctx = ctx,
+        .reply_id = ud,
     };
-    return run_async(ctx, &req->reply_id, getproperty_fn, req);
+    return run_async(ctx, getproperty_fn, req);
 }
 
 int mpv_request_log_messages(mpv_handle *ctx, const char *min_level)

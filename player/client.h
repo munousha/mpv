@@ -20,6 +20,5 @@ int mp_client_send_event(struct MPContext *mpctx, const char *client_name,
 
 struct mpv_handle *mp_new_client(struct mp_client_api *clients, const char *name);
 struct mp_log *mp_client_get_log(struct mpv_handle *ctx);
-void mp_client_status_reply(struct mpv_handle *ctx, int64_t reply_id, int status);
 
 #endif

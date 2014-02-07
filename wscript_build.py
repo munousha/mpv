@@ -436,13 +436,15 @@ def build(ctx):
     )
 
     if ctx.dependency_satisfied('shared'):
+        #ctx.load("syms")
         ctx(
-            target       = "libmpv",
+            target       = "mpv",
             source       = ctx.filtered_sources(sources),
             use          = ctx.dependencies_use(),
             includes     = [ctx.bldnode.abspath(), ctx.srcnode.abspath()] + \
                             ctx.dependencies_includes(),
-            features     = "c cshlib",
+            features     = "c cshlib syms",
+            export_symbols_regex = 'mpv_.*',
             install_path = ctx.env.LIBDIR,
         )
 
